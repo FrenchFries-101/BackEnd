@@ -101,6 +101,59 @@ def get_posts(page: int = 1, page_size: int = 20, db: Session = Depends(get_db))
         "posts": posts
     }
 
+# ==============================
+# 搜索帖子
+# ==============================
+"""
+    返回值说明：
+    - total: 符合关键词的帖子总数
+    - posts: 搜索结果列表（结构同帖子列表）
+"""
+
+@router.get("/posts/search")
+def search_posts(keyword: str, page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
+
+    keyword = f"%{keyword.strip()}%"
+
+    offset = (page - 1) * page_size
+
+    total = db.execute(text("""
+        SELECT COUNT(*)
+        FROM t_forum_post
+        WHERE is_delete = 0 AND title LIKE :keyword
+    """), {"keyword": keyword}).scalar() or 0
+
+    rows = db.execute(text("""
+        SELECT p.post_id, p.title, p.create_time, p.reply_count, p.like_count, u.username AS author
+        FROM t_forum_post p
+        INNER JOIN t_user u ON p.user_id = u.user_id
+        WHERE p.is_delete = 0 AND p.title LIKE :keyword
+        ORDER BY p.create_time DESC
+        LIMIT :offset, :page_size
+    """), {
+        "keyword": keyword,
+        "offset": offset,
+        "page_size": page_size
+    }).fetchall()
+
+    posts = []
+
+    for row in rows:
+        posts.append({
+            "id": row.post_id,
+            "title": row.title,
+            "author": row.author,
+            "time": row.create_time.strftime("%Y-%m-%d"),
+            "reply_count": row.reply_count,
+            "likes": row.like_count
+        })
+
+    return {
+        "total": total,
+        "posts": posts
+    }
+
+
 
 # ==============================
 # 帖子详情
@@ -511,54 +564,3 @@ def like_reply(reply_id: int, data: LikeAction, db: Session = Depends(get_db)):
         }
 
 
-# ==============================
-# 搜索帖子
-# ==============================
-"""
-    返回值说明：
-    - total: 符合关键词的帖子总数
-    - posts: 搜索结果列表（结构同帖子列表）
-"""
-
-@router.get("/posts/search")
-def search_posts(keyword: str, page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
-
-    keyword = f"%{keyword.strip()}%"
-
-    offset = (page - 1) * page_size
-
-    total = db.execute(text("""
-        SELECT COUNT(*)
-        FROM t_forum_post
-        WHERE is_delete = 0 AND title LIKE :keyword
-    """), {"keyword": keyword}).scalar() or 0
-
-    rows = db.execute(text("""
-        SELECT p.post_id, p.title, p.create_time, p.reply_count, p.like_count, u.username AS author
-        FROM t_forum_post p
-        INNER JOIN t_user u ON p.user_id = u.user_id
-        WHERE p.is_delete = 0 AND p.title LIKE :keyword
-        ORDER BY p.create_time DESC
-        LIMIT :offset, :page_size
-    """), {
-        "keyword": keyword,
-        "offset": offset,
-        "page_size": page_size
-    }).fetchall()
-
-    posts = []
-
-    for row in rows:
-        posts.append({
-            "id": row.post_id,
-            "title": row.title,
-            "author": row.author,
-            "time": row.create_time.strftime("%Y-%m-%d"),
-            "reply_count": row.reply_count,
-            "likes": row.like_count
-        })
-
-    return {
-        "total": total,
-        "posts": posts
-    }
