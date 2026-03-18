@@ -89,3 +89,4 @@ class UserListeningScore(Base):
     submit_time = Column(DateTime, default=datetime.utcnow)
 
     section = relationship("CambridgeSection", back_populates="scores")
+
