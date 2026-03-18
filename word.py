@@ -37,3 +37,4 @@ def get_words(subcategory_id: int, db: Session = Depends(get_db)):
     if not words:
         raise HTTPException(status_code=404, detail="No words found for this subcategory")
     return [{"english": w.english, "chinese": w.explanation} for w in words]
+
