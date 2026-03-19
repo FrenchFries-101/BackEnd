@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 import pymysql
 import hashlib
+from fastapi import APIRouter
 DB_HOST = "124.223.33.28"
 DB_PORT = 3306
 DB_USER = "cardData"
@@ -129,15 +130,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
-app = FastAPI(title="Academic English Auth API", version="1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-@app.get("/test-db-connection", summary="Test MySQL database connection")
+#app = FastAPI(title="Academic English Auth API", version="1.0")
+router = APIRouter()
+@router.get("/test-db-connection", summary="Test MySQL database connection")
 def test_db_connection():
     try:
         conn = get_db_connection()
@@ -163,7 +158,7 @@ def test_db_connection():
             "error_type": type(e).__name__
         }
 
-@app.post("/register", response_model=UserResponse, summary="Register new user")
+@router.post("/register", response_model=UserResponse, summary="Register new user")
 def register(user: UserCreate):
     if len(user.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -179,7 +174,7 @@ def register(user: UserCreate):
     
     return new_user
 
-@app.post("/login", response_model=Token, summary="User login (get access token)")
+@router.post("/login", response_model=Token, summary="User login (get access token)")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = get_user_by_username(form_data.username)
     if not user or not verify_password(form_data.password, user["password"]):
@@ -195,7 +190,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/users/me", response_model=UserResponse, summary="Get current user info")
+@router.get("/users/me", response_model=UserResponse, summary="Get current user info")
 def read_current_user(current_user: dict = Depends(get_current_user)):
     return {
         "id": current_user["user_id"],

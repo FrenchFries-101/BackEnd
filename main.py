@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from listening import router as listening_router
 from word import router as word_router
 from forum import router as forum_router
-from login import router as login_router 
+from Login import router as login_router
 
 
 # --------------------------
@@ -36,6 +36,15 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {"message": "API is serving"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",   # 文件名:变量名
+        host="127.0.0.1",
+        port=8000,
+        reload=True   # 开发模式自动重载
+    )
 
 
 from database import get_db
