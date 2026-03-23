@@ -977,6 +977,46 @@ def get_replies(post_id: int, db: Session = Depends(get_db)):
 
     return result
 
+# ==============================
+#用户是否给某个reply点过赞
+# ==============================
+
+@router.get("/replies/{reply_id}/is-liked")
+def is_reply_liked(reply_id: int, user_id: int, db: Session = Depends(get_db)):
+
+    result = db.execute(text("""
+        SELECT 1 FROM t_forum_reply_like
+        WHERE reply_id = :reply_id AND user_id = :user_id
+        LIMIT 1
+    """), {
+        "reply_id": reply_id,
+        "user_id": user_id
+    }).fetchone()
+
+    return {
+        "liked": True if result else False
+    }
+
+# ==============================
+#用户点过没有post
+# ==============================
+
+
+@router.get("/posts/{post_id}/is-liked")
+def is_post_liked(post_id: int, user_id: int, db: Session = Depends(get_db)):
+
+    result = db.execute(text("""
+        SELECT 1 FROM t_forum_post_like
+        WHERE post_id = :post_id AND user_id = :user_id
+        LIMIT 1
+    """), {
+        "post_id": post_id,
+        "user_id": user_id
+    }).fetchone()
+
+    return {
+        "liked": True if result else False
+    }
 
 # ==============================
 # 获取用户点赞过的帖子
