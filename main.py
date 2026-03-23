@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
 # 导入各模块的路由
 from listening import router as listening_router
 from word import router as word_router
@@ -17,6 +20,12 @@ app = FastAPI(
     description="Backend Interfaces",
     version="1.0.0"
 )
+
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # --------------------------
 # 注册所有模块的路由

@@ -42,9 +42,6 @@ MAX_TRANSCRIPT_CHARS = int(os.getenv("MAX_TRANSCRIPT_CHARS", "5000"))
 
 router = APIRouter(tags=["Speaking"])
 
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
 ASR_MODEL = None
 QWEN_CLIENT = None
 SESSIONS: Dict[str, "SpeakingSession"] = {}
