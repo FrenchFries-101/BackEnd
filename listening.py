@@ -72,20 +72,49 @@ def get_tests(cambridge_id: int, user_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/sections")
-def get_sections(test_id: int, db: Session = Depends(get_db)):
-    """Return all sections for a given test_id."""
+def get_sections(test_id: int, user_id: int, db: Session = Depends(get_db)):
     sections = (
         db.query(CambridgeSection)
         .filter(CambridgeSection.test_id == test_id)
         .order_by(CambridgeSection.section_no)
         .all()
     )
+
     if not sections:
         raise HTTPException(status_code=404, detail="No sections found for this test")
-    return [
-        {"section_id": s.section_id, "section_no": s.section_no, "section_name": s.section_name}
-        for s in sections
-    ]
+
+    # 一次性查出这个 user 在这个 test 的所有成绩
+    scores = (
+        db.query(UserListeningScore)
+        .join(CambridgeSection, UserListeningScore.section_id == CambridgeSection.section_id)
+        .filter(
+            CambridgeSection.test_id == test_id,
+            UserListeningScore.user_id == user_id
+        )
+        .all()
+    )
+
+    # 变成字典：{section_id: score}
+    score_dict = {s.section_id: s for s in scores}
+
+    result = []
+    for s in sections:
+        if s.section_id in score_dict:
+            correct_num = score_dict[s.section_id].correct_num
+            flag = True
+        else:
+            correct_num = 0
+            flag = False
+
+        result.append({
+            "section_id": s.section_id,
+            "section_no": s.section_no,
+            "section_name": s.section_name,
+            "correct_num": correct_num,
+            "is_completed": flag
+        })
+
+    return result
 
 
 @router.get("/material")
