@@ -10,18 +10,6 @@ from database import Base
 
 router = APIRouter(prefix="/ted", tags=["TED"])
 
-class UserListeningScore(Base):
-    __tablename__ = "t_user_listening_score"
-
-    score_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, nullable=False)
-    section_id = Column(BigInteger, ForeignKey("t_cambridge_section.section_id"), nullable=False)
-    correct_num = Column(Integer, nullable=False)
-    total_num = Column(Integer, nullable=False, default=10)
-    submit_time = Column(DateTime, default=datetime.utcnow)
-
-    section = relationship("CambridgeSection", back_populates="scores")
-
 
 class TedTalk(Base):
     __tablename__ = "t_ted_talk"
@@ -188,4 +176,5 @@ def load_analysis(talk_id: int, question_id: int, db: Session = Depends(get_db))
             status_code=404,
             detail=f"Fail to find TED {talk_id} question {question_id}."
         )
+
 
