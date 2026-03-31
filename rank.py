@@ -69,3 +69,40 @@ def get_rank_list():
     except Exception as e:
         print(f"获取排行榜失败: {e}")
         return []
+
+@router.get("/rank/user/{user_id}", summary="Get user rank by user ID")
+def get_user_rank(user_id: int):
+    """
+    根据用户ID获取用户排名
+    
+    Args:
+        user_id: 用户ID
+    
+    Returns:
+        dict: 包含用户排名和积分的字典
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 检查用户是否存在
+        cursor.execute("SELECT points FROM t_user WHERE user_id = %s AND is_delete = 0", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            conn.close()
+            return {"rank": 0, "points": 0}
+        
+        user_points = user["points"]
+        
+        # 统计积分高于当前用户的人数
+        cursor.execute("SELECT COUNT(*) as count FROM t_user WHERE points > %s AND is_delete = 0", (user_points,))
+        higher_count = cursor.fetchone()["count"]
+        
+        # 计算排名（人数+1）
+        rank = higher_count + 1
+        conn.close()
+        
+        return {"rank": rank, "points": user_points}
+    except Exception as e:
+        print(f"获取用户排名失败: {e}")
+        return {"rank": 0, "points": 0}

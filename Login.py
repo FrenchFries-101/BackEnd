@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
+    points: int
 
 class Token(BaseModel):
     access_token: str
@@ -97,8 +98,8 @@ def create_new_user(username: str, email: str, hashed_password: str):
     cursor.execute(
         """
         INSERT INTO t_user 
-        (username, email, password, create_time, update_time, is_delete) 
-        VALUES (%s, %s, %s, %s, %s, 0)
+        (username, email, password, create_time, update_time, is_delete, points) 
+        VALUES (%s, %s, %s, %s, %s, 0, 0)
         """,
         (username, email, hashed_password, current_time, current_time)
     )
@@ -107,7 +108,7 @@ def create_new_user(username: str, email: str, hashed_password: str):
     conn.commit()
     conn.close()
     
-    return {"id": user_id, "username": username, "email": email}
+    return {"id": user_id, "username": username, "email": email, "points": 0}
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Get current authenticated user from JWT token"""
@@ -195,7 +196,8 @@ def read_current_user(current_user: dict = Depends(get_current_user)):
     return {
         "id": current_user["user_id"],
         "username": current_user["username"],
-        "email": current_user["email"]
+        "email": current_user["email"],
+        "points": current_user.get("points", 0)
     }
 
 if __name__ == "__main__":
