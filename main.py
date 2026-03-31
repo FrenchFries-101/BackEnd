@@ -11,6 +11,7 @@ from forum import router as forum_router
 from Login import router as login_router
 from speaking import router as speaking_router
 from ted import router as ted_router
+from rank import router as rank_router
 
 
 # --------------------------
@@ -30,13 +31,14 @@ if STATIC_DIR.exists():
 
 # --------------------------
 # 注册所有模块的路由
-# --------------------------
+# 注册所有模块的路由
 app.include_router(listening_router)  # 监听接口，前缀 /listening
 app.include_router(word_router)       # 单词接口，前缀 /word
 app.include_router(forum_router)      # 论坛接口，前缀 /forum
 app.include_router(login_router)      # 登录接口（假设前缀 /login）
 app.include_router(speaking_router)
 app.include_router(ted_router)
+app.include_router(rank_router)       # 排行榜接口，前缀 /rank
 
 app.add_middleware(
     CORSMiddleware,
