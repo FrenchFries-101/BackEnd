@@ -12,6 +12,7 @@ from Login import router as login_router
 from speaking import router as speaking_router
 from ted import router as ted_router
 from rank import router as rank_router
+from group import router as group_router
 
 
 # --------------------------
@@ -39,6 +40,7 @@ app.include_router(login_router)      # 登录接口（假设前缀 /login）
 app.include_router(speaking_router)
 app.include_router(ted_router)
 app.include_router(rank_router)       # 排行榜接口，前缀 /rank
+app.include_router(group_router)      # 小组接口，前缀 /groups
 
 app.add_middleware(
     CORSMiddleware,
