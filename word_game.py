@@ -1,171 +1,159 @@
+from fastapi import APIRouter, HTTPException
+from typing import Dict, List
+import uuid
 import random
-from dataclasses import asdict, dataclass, field
-from threading import Lock
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+router = APIRouter(prefix="/wordgame", tags=["Word Game"])
 
-
-@dataclass
-class TeamState:
-    name: str
-    color: str
-    token_label: str
-    position: int = 0
-    dice_pool: int = 0
-    member_study_counts: list = field(default_factory=lambda: [0, 0])
-
-    def remaining_study_chances(self, member_index: int) -> int:
-        return max(0, 3 - self.member_study_counts[member_index])
-
-    def total_remaining_study_chances(self) -> int:
-        return sum(max(0, 3 - c) for c in self.member_study_counts)
+# =========================
+# 内存数据（第一阶段先这样）
+# =========================
+matches: Dict[str, dict] = {}
+user_match: Dict[int, str] = {}  # user_id -> match_id
 
 
-class WordRaceGame:
-    def __init__(self, total_cells: int = 84):
-        self.total_cells = total_cells
-        self.reset_match()
-
-    def reset_match(self):
-        self.red_team = TeamState(name="Red Team", color="#ef4444", token_label="R")
-        self.blue_team = TeamState(name="Blue Team", color="#3b82f6", token_label="B")
-        self.active_team_name = self.red_team.name
-        self.winner_name = None
-        self.current_day = 1
-
-    def get_active_team(self) -> TeamState:
-        return self.red_team if self.active_team_name == self.red_team.name else self.blue_team
-
-    def switch_team(self):
-        if self.winner_name:
-            return
-        self.active_team_name = (
-            self.blue_team.name if self.active_team_name == self.red_team.name else self.red_team.name
-        )
-
-    def study_for_member(self, member_index: int):
-        if self.winner_name:
-            return False, "Match already finished."
-
-        if member_index not in (0, 1):
-            return False, "member_index must be 0 or 1."
-
-        team = self.get_active_team()
-        if team.remaining_study_chances(member_index) <= 0:
-            return False, f"{team.name} - Member {member_index + 1} has no study chances left today."
-
-        team.member_study_counts[member_index] += 1
-        team.dice_pool += 1
-        return True, f"{team.name} - Member {member_index + 1} answered correctly. +1 shared dice gained."
-
-    def roll_dice(self):
-        if self.winner_name:
-            return False, "Match already finished.", None
-
-        team = self.get_active_team()
-        if team.dice_pool <= 0:
-            return False, f"{team.name} has no dice left.", None
-
-        roll = random.randint(1, 6)
-        team.dice_pool -= 1
-        team.position += roll
-
-        if team.position >= self.total_cells - 1:
-            team.position = self.total_cells - 1
-            self.winner_name = team.name
-            return True, f"{team.name} rolled {roll} and reached the goal first!", roll
-
-        return True, f"{team.name} rolled a {roll}. Current position: cell {team.position + 1}", roll
-
-    def advance_to_next_day(self):
-        self.current_day += 1
-        self.red_team.member_study_counts = [0, 0]
-        self.blue_team.member_study_counts = [0, 0]
-        return f"It is now Day {self.current_day}. All members can study up to 3 times again today."
-
-    def state_dict(self):
-        return {
-            "total_cells": self.total_cells,
-            "current_day": self.current_day,
-            "active_team_name": self.active_team_name,
-            "winner_name": self.winner_name,
-            "red_team": asdict(self.red_team),
-            "blue_team": asdict(self.blue_team),
-        }
+# =========================
+# 工具函数
+# =========================
+def get_waiting_match():
+    for m in matches.values():
+        if m["status"] == "waiting" and len(m["players"]) < 4:
+            return m
+    return None
 
 
-class StudyRequest(BaseModel):
-    member_index: int
+def create_match(user_id: int):
+    match_id = str(uuid.uuid4())[:8]
+    match = {
+        "id": match_id,
+        "status": "waiting",
+        "players": [],
+        "red_pos": 0,
+        "blue_pos": 0,
+        "red_rolls": 0,
+        "blue_rolls": 0,
+        "winner": None
+    }
+    matches[match_id] = match
+    return match
 
 
-app = FastAPI(title="Word Race API")
-
-game = WordRaceGame(total_cells=84)
-game_lock = Lock()
-
-
-@app.get("/")
-def root():
-    return {"message": "Word Race FastAPI backend is running."}
+def assign_teams(match):
+    players = match["players"]
+    # 固定分组
+    players[0]["team"] = "red"
+    players[1]["team"] = "red"
+    players[2]["team"] = "blue"
+    players[3]["team"] = "blue"
 
 
-@app.get("/game/state")
-def get_game_state():
-    with game_lock:
-        return game.state_dict()
+# =========================
+# 接口
+# =========================
+
+@router.post("/join")
+def join_game(user_id: int):
+    # 已经在局中
+    if user_id in user_match:
+        match_id = user_match[user_id]
+        return {"message": "already joined", "match_id": match_id}
+
+    match = get_waiting_match()
+    if not match:
+        match = create_match(user_id)
+
+    # 加入
+    player = {
+        "user_id": user_id,
+        "team": None,
+        "roll_contribute": 0
+    }
+    match["players"].append(player)
+    user_match[user_id] = match["id"]
+
+    # 满4人开局
+    if len(match["players"]) == 4:
+        match["status"] = "active"
+        assign_teams(match)
+
+    return {
+        "match_id": match["id"],
+        "status": match["status"],
+        "players": len(match["players"])
+    }
 
 
-@app.post("/game/switch-team")
-def switch_team():
-    with game_lock:
-        game.switch_team()
-        return {
-            "message": f"Now controlling {game.active_team_name}.",
-            "state": game.state_dict(),
-        }
+@router.post("/cancel")
+def cancel_match(user_id: int):
+    if user_id not in user_match:
+        return {"message": "not in match"}
+
+    match_id = user_match[user_id]
+    match = matches[match_id]
+
+    if match["status"] != "waiting":
+        raise HTTPException(400, "cannot cancel after game started")
+
+    match["players"] = [p for p in match["players"] if p["user_id"] != user_id]
+    del user_match[user_id]
+
+    return {"message": "cancelled"}
 
 
-@app.post("/game/study")
-def study(req: StudyRequest):
-    with game_lock:
-        ok, message = game.study_for_member(req.member_index)
-        if not ok:
-            raise HTTPException(status_code=400, detail=message)
-        return {
-            "message": message,
-            "state": game.state_dict(),
-        }
+@router.get("/status")
+def get_status(user_id: int):
+    if user_id not in user_match:
+        return {"in_match": False}
+
+    match = matches[user_match[user_id]]
+
+    return {
+        "in_match": True,
+        "match": match
+    }
 
 
-@app.post("/game/roll")
-def roll_dice():
-    with game_lock:
-        ok, message, roll = game.roll_dice()
-        if not ok:
-            raise HTTPException(status_code=400, detail=message)
-        return {
-            "message": message,
-            "roll": roll,
-            "state": game.state_dict(),
-        }
+@router.post("/gain-roll")
+def gain_roll(user_id: int):
+    if user_id not in user_match:
+        raise HTTPException(400, "not in match")
+
+    match = matches[user_match[user_id]]
+
+    player = next(p for p in match["players"] if p["user_id"] == user_id)
+    player["roll_contribute"] += 1
+
+    if player["team"] == "red":
+        match["red_rolls"] += 1
+    else:
+        match["blue_rolls"] += 1
+
+    return {"message": "roll gained"}
 
 
-@app.post("/game/next-day")
-def next_day():
-    with game_lock:
-        message = game.advance_to_next_day()
-        return {
-            "message": message,
-            "state": game.state_dict(),
-        }
+@router.post("/roll")
+def roll(user_id: int):
+    match = matches[user_match[user_id]]
 
+    player = next(p for p in match["players"] if p["user_id"] == user_id)
 
-@app.post("/game/reset")
-def reset_game():
-    with game_lock:
-        game.reset_match()
-        return {
-            "message": "Match reset successfully.",
-            "state": game.state_dict(),
-        }
+    if player["team"] == "red":
+        if match["red_rolls"] <= 0:
+            raise HTTPException(400, "no rolls")
+        match["red_rolls"] -= 1
+        step = random.randint(1, 6)
+        match["red_pos"] += step
+        if match["red_pos"] >= 83:
+            match["winner"] = "red"
+            match["status"] = "finished"
+    else:
+        if match["blue_rolls"] <= 0:
+            raise HTTPException(400, "no rolls")
+        match["blue_rolls"] -= 1
+        step = random.randint(1, 6)
+        match["blue_pos"] += step
+        if match["blue_pos"] >= 83:
+            match["winner"] = "blue"
+            match["status"] = "finished"
+
+    return {"step": step}
