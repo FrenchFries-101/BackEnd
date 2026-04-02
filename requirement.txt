@@ -1,18 +1,18 @@
-# Web framework
-fastapi==0.104.1
-uvicorn==0.24.0.post1
+# Web Framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
 
 # Database
-sqlalchemy==2.0.23
+sqlalchemy==2.0.40
 pymysql==1.1.0
 
 # Data validation
-pydantic==2.5.2
+pydantic==2.10.6
 
 # Auth / forms
 python-jose==3.3.0
 passlib==1.7.4
-python-multipart==0.0.6
+python-multipart==0.0.20
 
 # Speaking service
 python-dotenv==1.0.1
