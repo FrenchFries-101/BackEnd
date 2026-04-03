@@ -11,6 +11,8 @@ from forum import router as forum_router
 from Login import router as login_router
 from speaking import router as speaking_router
 from ted import router as ted_router
+from rank import router as rank_router
+from group import router as group_router
 from word_game import router as word_game_router
 
 
@@ -25,19 +27,24 @@ app = FastAPI(
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+HEAD_DIR = BASE_DIR / "head"
+HEAD_DIR.mkdir(parents=True, exist_ok=True)
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/head", StaticFiles(directory=HEAD_DIR), name="head")
 
 # --------------------------
 # 注册所有模块的路由
-# --------------------------
+# 注册所有模块的路由
 app.include_router(listening_router)  # 监听接口，前缀 /listening
 app.include_router(word_router)       # 单词接口，前缀 /word
 app.include_router(forum_router)      # 论坛接口，前缀 /forum
 app.include_router(login_router)      # 登录接口（假设前缀 /login）
 app.include_router(speaking_router)
 app.include_router(ted_router)
+app.include_router(rank_router)       # 排行榜接口，前缀 /rank
+app.include_router(group_router)      # 小组接口，前缀 /groups
 app.include_router(word_game_router)
 
 app.add_middleware(
