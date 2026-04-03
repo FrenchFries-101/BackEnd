@@ -1,12 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 from pydantic import BaseModel
 from datetime import datetime, date
+from pathlib import Path
+import base64
 import hashlib
+import uuid
 from database import get_db
 
+
 router = APIRouter(prefix="/groups", tags=["groups"])
+
+BASE_DIR = Path(__file__).resolve().parent
+GROUP_HEAD_DIR = BASE_DIR / "head"
+GROUP_HEAD_DIR.mkdir(parents=True, exist_ok=True)
+GROUP_HEAD_BASE_PATH = "head"
 
 
 # 数据模型
@@ -153,6 +162,44 @@ def check_password(hashed_password, password):
     return hashlib.sha256(password.encode()).hexdigest() == hashed_password
 
 
+def get_image_suffix(filename, content_type):
+    if filename:
+        suffix = Path(filename).suffix.lower()
+        if suffix in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+            return suffix
+
+    content_type_map = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp"
+    }
+    return content_type_map.get(content_type, ".jpg")
+
+
+def decode_base64_image(image_base64):
+    content = (image_base64 or "").strip()
+    if not content:
+        raise ValueError("base64图片内容不能为空")
+
+    content_type = None
+    if content.startswith("data:image/") and "," in content:
+        header, content = content.split(",", 1)
+        if ";" in header:
+            content_type = header.split(";")[0].replace("data:", "")
+
+    try:
+        image_bytes = base64.b64decode(content, validate=True)
+    except Exception as exc:
+        raise ValueError("base64图片格式不正确") from exc
+
+    if not image_bytes:
+        raise ValueError("图片内容不能为空")
+
+    return image_bytes, get_image_suffix(None, content_type)
+
+
 # API接口
 @router.get("/")
 async def get_groups(
@@ -182,7 +229,8 @@ async def get_groups(
             "current_members": current_members,
             "max_members": group.max_members,
             "group_icon": group.group_icon,
-            "creator_id": group.creator_id
+            "creator_id": group.creator_id,
+            "password": getattr(group, "password", None) is None
         })
     
     return {
@@ -230,6 +278,52 @@ async def create_group(
     }
 
 
+@router.post("/{group_id}/icon")
+async def upload_group_icon(
+    group_id: int,
+    request: Request,
+    image: UploadFile | None = File(None),
+    image_base64: str | None = Form(None),
+    db: Session = Depends(get_db)
+):
+    """上传小组头像并回写URL"""
+    group = db.query(Group).filter(Group.group_id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="小组不存在")
+
+    image_bytes = None
+    suffix = ".jpg"
+
+    if image is not None:
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="上传图片不能为空")
+        suffix = get_image_suffix(image.filename, image.content_type)
+    elif image_base64:
+        try:
+            image_bytes, suffix = decode_base64_image(image_base64)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    else:
+        raise HTTPException(status_code=400, detail="请上传图片文件或传入base64图片")
+
+    filename = f"group_{group_id}_{uuid.uuid4().hex}{suffix}"
+    file_path = GROUP_HEAD_DIR / filename
+    file_path.write_bytes(image_bytes)
+
+    base_url = str(request.base_url).rstrip("/")
+    image_url = f"{base_url}/{GROUP_HEAD_BASE_PATH}/{filename}"
+    setattr(group, "group_icon", image_url)
+    db.commit()
+
+    return {
+        "success": True,
+        "group_id": group_id,
+        "group_icon": image_url,
+        "message": "头像上传成功"
+    }
+
+
 @router.post("/join")
 async def join_group(
     join_data: GroupJoin,
@@ -271,6 +365,40 @@ async def join_group(
         "success": True,
         "message": "加入小组成功",
         "group_id": join_data.group_id
+    }
+
+
+@router.get("/user/{user_id}/groups")
+async def get_user_groups(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取某个用户所在的所有小组及身份"""
+    rows = db.query(
+        GroupMember.group_id,
+        GroupMember.role,
+        Group.group_name,
+        Group.group_icon
+    ).join(
+        Group,
+        Group.group_id == GroupMember.group_id
+    ).filter(
+        GroupMember.user_id == user_id
+    ).all()
+
+    groups = []
+    for row in rows:
+        groups.append({
+            "group_id": row.group_id,
+            "role": row.role,
+            "group_name": row.group_name,
+            "group_icon": row.group_icon
+        })
+
+    return {
+        "user_id": user_id,
+        "groups": groups,
+        "total_count": len(groups)
     }
 
 

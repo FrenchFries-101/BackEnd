@@ -258,14 +258,32 @@ async def run_in_thread(func, *args):
     return await asyncio.to_thread(func, *args)
 
 
+# def get_asr_model_sync():
+#     global ASR_MODEL
+#     if ASR_MODEL is None:
+#         from faster_whisper import WhisperModel
+#         ASR_MODEL = WhisperModel(
+#             WHISPER_MODEL_SIZE,
+#             device=WHISPER_DEVICE,
+#             compute_type=WHISPER_COMPUTE_TYPE,
+#             cpu_threads=1,
+#             num_workers=1,
+#         )
+#     return ASR_MODEL
+
 def get_asr_model_sync():
+    """
+    返回 ASR 模型实例，优先使用本地下载的 whisper-small 模型。
+    """
     global ASR_MODEL
     if ASR_MODEL is None:
         from faster_whisper import WhisperModel
+        # 这里指定本地模型路径
+        local_model_path = str(BASE_DIR / "models/whisper-small")
         ASR_MODEL = WhisperModel(
-            WHISPER_MODEL_SIZE,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
+            local_model_path,       # 本地目录
+            device=WHISPER_DEVICE,  # cpu 或 cuda
+            compute_type=WHISPER_COMPUTE_TYPE,  # int8 / float16
             cpu_threads=1,
             num_workers=1,
         )
