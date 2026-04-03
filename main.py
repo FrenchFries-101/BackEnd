@@ -14,7 +14,7 @@ from ted import router as ted_router
 from rank import router as rank_router
 from group import router as group_router
 from word_game import router as word_game_router
-
+from pet import router as pet_router, init_pet_db   # ✅ 同一行导入更清晰
 
 # --------------------------
 # 创建 FastAPI 应用实例
@@ -25,6 +25,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# --------------------------
+# 静态文件挂载
+# --------------------------
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 HEAD_DIR = BASE_DIR / "head"
@@ -32,7 +35,6 @@ HEAD_DIR.mkdir(parents=True, exist_ok=True)
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-app.mount("/head", StaticFiles(directory=HEAD_DIR), name="head")
 
 # --------------------------
 # 注册所有模块的路由
@@ -47,26 +49,51 @@ app.include_router(rank_router)       # 排行榜接口，前缀 /rank
 app.include_router(group_router)      # 小组接口，前缀 /groups
 app.include_router(word_game_router)
 
+# CORS 跨域中间件（放在路由注册之前）
+# --------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境建议指定具体域名
+    allow_origins=["*"],        # 生产环境建议指定具体域名
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# --------------------------
+# 注册所有模块的路由
+# --------------------------
+app.include_router(listening_router)
+app.include_router(word_router)
+app.include_router(forum_router)
+app.include_router(login_router)
+app.include_router(speaking_router)
+app.include_router(ted_router)
+app.include_router(rank_router)
+app.include_router(group_router)
+app.include_router(pet_router)      # ✅ 宠物模块路由
+
+# --------------------------
+# 启动事件：初始化数据库
+# --------------------------
+@app.on_event("startup")
+def on_startup():
+    init_pet_db()               # ✅ 修复：启动时初始化宠物数据库表 + 种子数据
+
+# --------------------------
+# 根路由健康检查
+# --------------------------
 @app.get("/")
 def root():
     return {"message": "API is serving"}
 
+# --------------------------
+# 本地开发入口
+# --------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",   # 文件名:变量名
+        "main:app",
         host="127.0.0.1",
         port=8000,
-        reload=True   # 开发模式自动重载
+        reload=True
     )
-
-
-from database import get_db
