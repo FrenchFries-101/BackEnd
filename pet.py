@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -22,15 +21,12 @@ from pet_api.services.pet_logic import (
     q2,
     settle_pet,
     today_bounds,
-    unlock_skin_if_needed,
     utcnow,
 )
 
-# ✅ 关键改动：用 router 替代 app
 router = APIRouter(prefix="/pet_module", tags=["Pet"])
 
 
-# ✅ 数据库初始化函数（不注册到 router，由 main.py 调用）
 def init_pet_db() -> None:
     Base.metadata.create_all(bind=engine)
     with Session(engine) as db:
@@ -38,18 +34,10 @@ def init_pet_db() -> None:
         db.commit()
 
 
-# ─────────────────────────────────────────
-# Health
-# ─────────────────────────────────────────
-
 @router.get("/health", response_model=schemas.HealthResponse)
 def health() -> schemas.HealthResponse:
     return schemas.HealthResponse(ok=True, database_url=DATABASE_URL)
 
-
-# ─────────────────────────────────────────
-# Pet 状态 & 基础信息
-# ─────────────────────────────────────────
 
 @router.get("/pet/status", response_model=schemas.PetStatusResponse)
 def get_pet_status(user_id: str = Query(...), db: Session = Depends(get_db)) -> schemas.PetStatusResponse:
@@ -113,10 +101,6 @@ def modify_name(payload: schemas.ModifyNameRequest, db: Session = Depends(get_db
     return schemas.MessageResponse(success=True, message="Pet name updated successfully.")
 
 
-# ─────────────────────────────────────────
-# 皮肤
-# ─────────────────────────────────────────
-
 @router.get("/pet/current_skin", response_model=schemas.SkinSimpleResponse)
 def get_current_skin(user_id: str = Query(...), db: Session = Depends(get_db)) -> schemas.SkinSimpleResponse:
     pet = get_or_create_pet(db, user_id)
@@ -133,7 +117,7 @@ def get_skins(user_id: str = Query(...), db: Session = Depends(get_db)) -> list[
     pet = get_or_create_pet(db, user_id)
     settle_pet(db, pet)
     db.commit()
-    unlock_rows = db.scalars(
+    rows = db.scalars(
         select(models.Skin).where(models.Skin.pet_type_id == pet.pet_type_id).order_by(models.Skin.skin_id)
     ).all()
     owned = list_owned_skin_ids(db, user_id)
@@ -147,7 +131,7 @@ def get_skins(user_id: str = Query(...), db: Session = Depends(get_db)) -> list[
             owned=skin.skin_id in owned,
             current=skin.skin_id == pet.current_skin_id,
         )
-        for skin in unlock_rows
+        for skin in rows
     ]
 
 
@@ -167,10 +151,6 @@ def set_current_skin(payload: schemas.SetCurrentSkinRequest, db: Session = Depen
     db.commit()
     return schemas.MessageResponse(success=True, message="Skin switched successfully.")
 
-
-# ─────────────────────────────────────────
-# 服务
-# ─────────────────────────────────────────
 
 @router.get("/pet/service_categories", response_model=list[schemas.ServiceCategoryResponse])
 def get_service_categories(db: Session = Depends(get_db)) -> list[schemas.ServiceCategoryResponse]:
@@ -265,10 +245,6 @@ def apply_service(payload: schemas.ApplyServiceRequest, db: Session = Depends(ge
         message="Service applied successfully.",
     )
 
-
-# ─────────────────────────────────────────
-# 任务
-# ─────────────────────────────────────────
 
 @router.post("/task/complete", response_model=schemas.CompleteTaskResponse)
 def complete_task(payload: schemas.CompleteTaskRequest, db: Session = Depends(get_db)) -> schemas.CompleteTaskResponse:

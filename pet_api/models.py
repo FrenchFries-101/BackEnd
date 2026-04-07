@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -14,8 +15,8 @@ class PetType(Base):
 
     pet_type_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    default_skin_id: Mapped[int | None] = mapped_column(ForeignKey("skins.skin_id"), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    default_skin_id: Mapped[Optional[int]] = mapped_column(ForeignKey("skins.skin_id"), nullable=True)
 
 
 class PetInfo(Base):
@@ -29,11 +30,11 @@ class PetInfo(Base):
     exp: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False, default=Decimal("0.00"))
     vitality: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("60.00"))
     points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    current_skin_id: Mapped[int | None] = mapped_column(ForeignKey("skins.skin_id"), nullable=True)
+    current_skin_id: Mapped[Optional[int]] = mapped_column(ForeignKey("skins.skin_id"), nullable=True)
     last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     pet_type: Mapped[PetType] = relationship("PetType")
-    current_skin: Mapped[Skin | None] = relationship("Skin", foreign_keys=[current_skin_id])
+    current_skin: Mapped[Optional["Skin"]] = relationship("Skin", foreign_keys=[current_skin_id])
 
 
 class LevelConfig(Base):
@@ -41,7 +42,7 @@ class LevelConfig(Base):
 
     level: Mapped[int] = mapped_column(Integer, primary_key=True)
     exp_required: Mapped[int] = mapped_column(Integer, nullable=False)
-    unlock_skin_id: Mapped[int | None] = mapped_column(ForeignKey("skins.skin_id"), nullable=True)
+    unlock_skin_id: Mapped[Optional[int]] = mapped_column(ForeignKey("skins.skin_id"), nullable=True)
 
 
 class Skin(Base):
@@ -50,7 +51,7 @@ class Skin(Base):
     skin_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     pet_type_id: Mapped[int] = mapped_column(ForeignKey("pet_types.pet_type_id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     gif_url: Mapped[str] = mapped_column(String(255), nullable=False)
     unlock_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
@@ -90,7 +91,7 @@ class Service(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     vitality_effect: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     points_cost: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    gif_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gif_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     cooldown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
@@ -102,8 +103,8 @@ class UserServiceRecord(Base):
     service_id: Mapped[int] = mapped_column(ForeignKey("services.service_id"), nullable=False)
     applied_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    effect_vitality: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    effect_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    effect_vitality: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
+    effect_points: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class TaskRecord(Base):
