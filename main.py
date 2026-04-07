@@ -15,6 +15,7 @@ from rank import router as rank_router
 from group import router as group_router
 from word_game import router as word_game_router
 from pet import router as pet_router, init_pet_db   # ✅ 同一行导入更清晰
+from recommendation.restaurant import router as restaurant_router, init_restaurant_db  # ✅ 美食推荐模块
 
 # --------------------------
 # 创建 FastAPI 应用实例
@@ -48,6 +49,7 @@ app.include_router(ted_router)
 app.include_router(rank_router)       # 排行榜接口，前缀 /rank
 app.include_router(group_router)      # 小组接口，前缀 /groups
 app.include_router(word_game_router)
+app.include_router(restaurant_router)  # ✅ 美食推荐模块接口，前缀 /api/restaurant
 
 # CORS 跨域中间件（放在路由注册之前）
 # --------------------------
@@ -78,6 +80,19 @@ app.include_router(pet_router)      # ✅ 宠物模块路由
 @app.on_event("startup")
 def on_startup():
     init_pet_db()               # ✅ 修复：启动时初始化宠物数据库表 + 种子数据
+    init_restaurant_db()        # ✅ 初始化美食推荐数据库表
+    
+    # 初始化美食推荐种子数据
+    from database import SessionLocal
+    from recommendation.seed import seed_restaurant_data
+    from sqlalchemy.orm import sessionmaker
+    from database import engine
+    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = Session()
+    try:
+        seed_restaurant_data(db)
+    finally:
+        db.close()
 
 # --------------------------
 # 根路由健康检查
