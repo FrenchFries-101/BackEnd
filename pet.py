@@ -1,10 +1,9 @@
-
 from __future__ import annotations
 
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from pet_api import models, schemas
@@ -22,15 +21,46 @@ from pet_api.services.pet_logic import (
     q2,
     settle_pet,
     today_bounds,
-    unlock_skin_if_needed,
     utcnow,
 )
 
-# ✅ 关键改动：用 router 替代 app
+# ── t_user 积分操作（以 t_user.points 为准） ──
+
+def get_t_user_points(db: Session, user_id: str) -> int:
+    # Debug: 添加调试日志
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"[DEBUG] get_t_user_points - input user_id={user_id}, type={type(user_id)}")
+    logging.info(f"[DEBUG] query: SELECT points FROM t_user WHERE user_id = {user_id} AND is_delete = 0")
+    
+    row = db.execute(
+        text("SELECT points FROM t_user WHERE user_id = :uid AND is_delete = 0"),
+        {"uid": int(user_id)},
+    ).fetchone()
+    
+    logging.info(f"[DEBUG] query result row={row}")
+    
+    return int(row[0]) if row else 0
+
+
+def deduct_t_user_points(db: Session, user_id: str, amount: int) -> int:
+    db.execute(
+        text("UPDATE t_user SET points = points - :amt WHERE user_id = :uid AND is_delete = 0"),
+        {"amt": amount, "uid": int(user_id)},
+    )
+    return get_t_user_points(db, user_id)
+
+
+def add_t_user_points(db: Session, user_id: str, amount: int) -> int:
+    db.execute(
+        text("UPDATE t_user SET points = points + :amt WHERE user_id = :uid AND is_delete = 0"),
+        {"amt": amount, "uid": int(user_id)},
+    )
+    return get_t_user_points(db, user_id)
+
 router = APIRouter(prefix="/pet_module", tags=["Pet"])
 
 
-# ✅ 数据库初始化函数（不注册到 router，由 main.py 调用）
 def init_pet_db() -> None:
     Base.metadata.create_all(bind=engine)
     with Session(engine) as db:
@@ -38,18 +68,10 @@ def init_pet_db() -> None:
         db.commit()
 
 
-# ─────────────────────────────────────────
-# Health
-# ─────────────────────────────────────────
-
 @router.get("/health", response_model=schemas.HealthResponse)
 def health() -> schemas.HealthResponse:
     return schemas.HealthResponse(ok=True, database_url=DATABASE_URL)
 
-
-# ─────────────────────────────────────────
-# Pet 状态 & 基础信息
-# ─────────────────────────────────────────
 
 @router.get("/pet/status", response_model=schemas.PetStatusResponse)
 def get_pet_status(user_id: str = Query(...), db: Session = Depends(get_db)) -> schemas.PetStatusResponse:
@@ -66,7 +88,7 @@ def get_pet_status(user_id: str = Query(...), db: Session = Depends(get_db)) -> 
         exp_required=get_exp_required_for_level(db, result.pet.level),
         vitality=q2(Decimal(result.pet.vitality)),
         vitality_zone=result.vitality_zone,
-        points=result.pet.points,
+        points=get_t_user_points(db, result.pet.user_id),
         current_skin_id=result.pet.current_skin_id,
         exp_rate=result.exp_rate,
         last_updated=result.pet.last_updated,
@@ -113,10 +135,6 @@ def modify_name(payload: schemas.ModifyNameRequest, db: Session = Depends(get_db
     return schemas.MessageResponse(success=True, message="Pet name updated successfully.")
 
 
-# ─────────────────────────────────────────
-# 皮肤
-# ─────────────────────────────────────────
-
 @router.get("/pet/current_skin", response_model=schemas.SkinSimpleResponse)
 def get_current_skin(user_id: str = Query(...), db: Session = Depends(get_db)) -> schemas.SkinSimpleResponse:
     pet = get_or_create_pet(db, user_id)
@@ -133,7 +151,7 @@ def get_skins(user_id: str = Query(...), db: Session = Depends(get_db)) -> list[
     pet = get_or_create_pet(db, user_id)
     settle_pet(db, pet)
     db.commit()
-    unlock_rows = db.scalars(
+    rows = db.scalars(
         select(models.Skin).where(models.Skin.pet_type_id == pet.pet_type_id).order_by(models.Skin.skin_id)
     ).all()
     owned = list_owned_skin_ids(db, user_id)
@@ -147,7 +165,7 @@ def get_skins(user_id: str = Query(...), db: Session = Depends(get_db)) -> list[
             owned=skin.skin_id in owned,
             current=skin.skin_id == pet.current_skin_id,
         )
-        for skin in unlock_rows
+        for skin in rows
     ]
 
 
@@ -167,10 +185,6 @@ def set_current_skin(payload: schemas.SetCurrentSkinRequest, db: Session = Depen
     db.commit()
     return schemas.MessageResponse(success=True, message="Skin switched successfully.")
 
-
-# ─────────────────────────────────────────
-# 服务
-# ─────────────────────────────────────────
 
 @router.get("/pet/service_categories", response_model=list[schemas.ServiceCategoryResponse])
 def get_service_categories(db: Session = Depends(get_db)) -> list[schemas.ServiceCategoryResponse]:
@@ -206,7 +220,15 @@ def apply_service(payload: schemas.ApplyServiceRequest, db: Session = Depends(ge
     if service is None:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    if pet.points < service.points_cost:
+    user_points = get_t_user_points(db, payload.user_id)
+
+    # Debug: 添加调试日志
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"[DEBUG] apply_service - user_id={payload.user_id}, type={type(payload.user_id)}")
+    logging.info(f"[DEBUG] user_points={user_points}, service.points_cost={service.points_cost}")
+
+    if user_points < service.points_cost:
         db.add(models.UserServiceRecord(
             user_id=payload.user_id,
             service_id=payload.service_id,
@@ -244,7 +266,7 @@ def apply_service(payload: schemas.ApplyServiceRequest, db: Session = Depends(ge
             return schemas.ApplyServiceResponse(success=False, message=f"Service is cooling down, wait {remaining} seconds.")
 
     vitality_before = Decimal(pet.vitality)
-    pet.points -= service.points_cost
+    new_points = deduct_t_user_points(db, payload.user_id, service.points_cost)
     pet.vitality = q2(min(Decimal("100.00"), Decimal(pet.vitality) + Decimal(service.vitality_effect)))
     db.add(pet)
     db.add(models.UserServiceRecord(
@@ -259,16 +281,12 @@ def apply_service(payload: schemas.ApplyServiceRequest, db: Session = Depends(ge
     return schemas.ApplyServiceResponse(
         success=True,
         new_vitality=q2(Decimal(pet.vitality)),
-        new_points=pet.points,
+        new_points=new_points,
         vitality_gained=q2(Decimal(pet.vitality) - vitality_before),
         points_spent=service.points_cost,
         message="Service applied successfully.",
     )
 
-
-# ─────────────────────────────────────────
-# 任务
-# ─────────────────────────────────────────
 
 @router.post("/task/complete", response_model=schemas.CompleteTaskResponse)
 def complete_task(payload: schemas.CompleteTaskRequest, db: Session = Depends(get_db)) -> schemas.CompleteTaskResponse:
@@ -285,7 +303,7 @@ def complete_task(payload: schemas.CompleteTaskRequest, db: Session = Depends(ge
         return schemas.CompleteTaskResponse(
             success=False,
             points_earned=0,
-            new_points=pet.points,
+            new_points=get_t_user_points(db, payload.user_id),
             daily_limit_reached=True,
             message="Daily limit reached for this task type.",
         )
@@ -297,12 +315,12 @@ def complete_task(payload: schemas.CompleteTaskRequest, db: Session = Depends(ge
         return schemas.CompleteTaskResponse(
             success=False,
             points_earned=0,
-            new_points=pet.points,
+            new_points=get_t_user_points(db, payload.user_id),
             daily_limit_reached=True,
             message="Daily point cap reached.",
         )
 
-    pet.points += reward
+    new_points = add_t_user_points(db, payload.user_id, reward)
     db.add(pet)
     db.add(models.TaskRecord(
         user_id=payload.user_id,
@@ -314,7 +332,7 @@ def complete_task(payload: schemas.CompleteTaskRequest, db: Session = Depends(ge
     return schemas.CompleteTaskResponse(
         success=True,
         points_earned=reward,
-        new_points=pet.points,
+        new_points=new_points,
         daily_limit_reached=False,
         message=task_cfg["message"],
     )
