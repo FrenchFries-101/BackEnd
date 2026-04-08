@@ -18,7 +18,6 @@ Thumbs.dbs
 # 本地运行产物
 .vs/
 .env
-head/
 data/sessions/
 data/*.db
 models/
