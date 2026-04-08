@@ -1,0 +1,19 @@
+{
+  "session_id": "e1c61f30-8e6f-4e5f-aebf-2dd0e8fd438f",
+  "student_id": "24",
+  "topic": "Is it better to study alone or with a group? Explain your opinion.",
+  "think_seconds": 15,
+  "answer_seconds": 60,
+  "created_at": "2026-03-24T02:48:56.216291+00:00",
+  "thinking_deadline": "2026-03-24T02:49:11.216291+00:00",
+  "answer_deadline": "2026-03-24T02:50:11.216291+00:00",
+  "status": "thinking",
+  "transcript": "",
+  "word_count": 0,
+  "duration_seconds": null,
+  "audio_filename": null,
+  "final_result": null,
+  "finalized_at": null,
+  "aborted_at": null,
+  "session_dir": "C:\\Users\\26364\\Desktop\\\u654f\u6377\\back\\data\\sessions\\e1c61f30-8e6f-4e5f-aebf-2dd0e8fd438f"
+}
