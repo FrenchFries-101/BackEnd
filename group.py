@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 from pydantic import BaseModel
@@ -6,6 +6,7 @@ from datetime import datetime, date
 from pathlib import Path
 import base64
 import hashlib
+import sys
 import uuid
 from database import get_db
 from pydantic import Field
@@ -13,10 +14,12 @@ from pydantic import Field
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
-BASE_DIR = Path(__file__).resolve().parent
-GROUP_HEAD_DIR = BASE_DIR / "head"
+RUNTIME_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+GROUP_HEAD_DIR = RUNTIME_DIR / "head"
 GROUP_HEAD_DIR.mkdir(parents=True, exist_ok=True)
-GROUP_HEAD_BASE_PATH = "head"
+GROUP_HEAD_BASE_URL = "/head"
+
+
 
 
 # 数据模型
@@ -373,8 +376,6 @@ async def create_group(
 async def upload_group_icon(
     group_id: int,
     request: Request,
-    image: UploadFile | None = File(None),
-    image_base64: str | None = Form(None),
     db: Session = Depends(get_db)
 ):
     """上传小组头像并回写URL"""
@@ -385,25 +386,47 @@ async def upload_group_icon(
     image_bytes = None
     suffix = ".jpg"
 
-    if image is not None:
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="上传图片不能为空")
-        suffix = get_image_suffix(image.filename, image.content_type)
-    elif image_base64:
+    content_type = (request.headers.get("content-type") or "").lower()
+
+    if "application/json" in content_type:
+        payload = await request.json()
+        image_base64 = payload.get("image_base64") if isinstance(payload, dict) else None
+        if not image_base64:
+            raise HTTPException(status_code=400, detail="JSON请求请传 image_base64")
         try:
             image_bytes, suffix = decode_base64_image(image_base64)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     else:
-        raise HTTPException(status_code=400, detail="请上传图片文件或传入base64图片")
+        try:
+            form = await request.form(max_part_size=20 * 1024 * 1024)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="上传内容过大，请压缩图片或改用JSON base64") from exc
+
+        image = form.get("image")
+        image_base64 = form.get("image_base64")
+
+        if image is not None and not isinstance(image, str) and hasattr(image, "read"):
+            image_bytes = await image.read()
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail="上传图片不能为空")
+            suffix = get_image_suffix(getattr(image, "filename", None), getattr(image, "content_type", None))
+        elif image_base64:
+            try:
+                image_bytes, suffix = decode_base64_image(image_base64)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        else:
+            raise HTTPException(status_code=400, detail="请上传图片文件或传入base64图片")
+
+    if not GROUP_HEAD_DIR.exists() or not GROUP_HEAD_DIR.is_dir():
+        raise HTTPException(status_code=500, detail=f"服务器图片目录不存在: {GROUP_HEAD_DIR}")
 
     filename = f"group_{group_id}_{uuid.uuid4().hex}{suffix}"
     file_path = GROUP_HEAD_DIR / filename
     file_path.write_bytes(image_bytes)
 
-    base_url = str(request.base_url).rstrip("/")
-    image_url = f"{base_url}/{GROUP_HEAD_BASE_PATH}/{filename}"
+    image_url = f"{GROUP_HEAD_BASE_URL}/{filename}"
     setattr(group, "group_icon", image_url)
     db.commit()
 
@@ -931,14 +954,29 @@ async def get_group_ranking(group_id: int, db: Session = Depends(get_db)):
     return result
 
 @router.post("/upload_images")
-async def upload_images(
-    request: Request,
-    images: list[str] = Form(...),  # base64 list
-):
+async def upload_images(request: Request):
     """上传多张图片（base64）并返回URL列表"""
 
+    images = []
+    content_type = (request.headers.get("content-type") or "").lower()
+
+    if "application/json" in content_type:
+        payload = await request.json()
+        if isinstance(payload, dict):
+            images = payload.get("images") or []
+    else:
+        try:
+            form = await request.form(max_part_size=20 * 1024 * 1024)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="上传内容过大，请压缩图片或改用JSON base64") from exc
+        images = form.getlist("images") or form.getlist("images[]")
+
+    images = [item.strip() for item in images if isinstance(item, str) and item.strip()]
     if not images:
         raise HTTPException(status_code=400, detail="图片列表不能为空")
+
+    if not GROUP_HEAD_DIR.exists() or not GROUP_HEAD_DIR.is_dir():
+        raise HTTPException(status_code=500, detail=f"服务器图片目录不存在: {GROUP_HEAD_DIR}")
 
     uploaded_urls = []
 
@@ -952,8 +990,7 @@ async def upload_images(
         file_path = GROUP_HEAD_DIR / filename
         file_path.write_bytes(image_bytes)
 
-        base_url = str(request.base_url).rstrip("/")
-        image_url = f"{base_url}/{GROUP_HEAD_BASE_PATH}/{filename}"
+        image_url = f"{GROUP_HEAD_BASE_URL}/{filename}"
 
         uploaded_urls.append(image_url)
 

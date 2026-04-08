@@ -117,6 +117,13 @@ def get_quote(user_id: str = Query(...), db: Session = Depends(get_db)) -> schem
     return schemas.QuoteResponse(quote_id=quote.quote_id, content=quote.content, vitality_zone=vitality_zone)
 
 
+@router.get("/pet/name", response_model=schemas.PetNameResponse)
+def get_pet_name(user_id: str = Query(...), db: Session = Depends(get_db)) -> schemas.PetNameResponse:
+    """获取用户的宠物名字"""
+    pet = get_or_create_pet(db, user_id)
+    return schemas.PetNameResponse(pet_id=pet.pet_id, name=pet.name)
+
+
 @router.post("/pet/modify_name", response_model=schemas.MessageResponse)
 def modify_name(payload: schemas.ModifyNameRequest, db: Session = Depends(get_db)) -> schemas.MessageResponse:
     pet = get_or_create_pet(db, payload.user_id)
