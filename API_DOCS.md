@@ -322,3 +322,204 @@ python init_restaurant_db.py
 - `dundee.py` - 邓迪留学信息推荐
 
 所有推荐类功能都统一在 `recommendation` 模块下管理，保持代码结构清晰。
+
+---
+
+## 长沙城市信息模块
+
+长沙城市信息模块提供天气查询和景点推荐功能。
+
+### 获取天气信息
+
+**接口**: `GET /api/city/weather`
+
+**说明**: 获取指定月份的长沙天气信息，默认返回当前月份。
+
+**请求参数** (可选):
+- `month`: 月份 (1-12)，不传则返回当前月份
+
+**请求示例**:
+
+```bash
+# 获取当前月份天气
+GET /api/city/weather
+
+# 获取4月天气
+GET /api/city/weather?month=4
+```
+
+**返回示例**:
+
+```json
+{
+  "month": 4,
+  "description": "Rainy but warming up, enjoy spring flowers!",
+  "icon_url": "static/icons/rain.gif"
+}
+```
+
+**字段说明**:
+- `month`: 月份
+- `description`: 英文天气描述
+- `icon_url`: 天气图标URL
+
+**支持的月份**:
+- 3月: "Rainy season, watch out riding e-scooters!"
+- 4月: "Rainy but warming up, enjoy spring flowers!"
+- 5月: "Sunny and warm, perfect for outdoor activities!"
+
+---
+
+### 获取景点信息
+
+**接口**: `GET /api/city/sights`
+
+**说明**: 获取长沙景点信息列表。
+
+**请求参数** (可选):
+- `limit`: 返回景点数量，默认3条，范围1-100
+
+**请求示例**:
+
+```bash
+# 获取默认3条景点
+GET /api/city/sights
+
+# 获取2条景点
+GET /api/city/sights?limit=2
+```
+
+**返回示例**:
+
+```json
+[
+  {
+    "title": "Hunan Botanical Garden",
+    "description": "Enjoy flowers and beautiful garden scenery",
+    "icon_url": "static/icons/flower.gif",
+    "image_url": "static/images/hunan_garden.png",
+    "address": "Kaifu District, Changsha, Hunan",
+    "copyright": "https://baike.baidu.com/item/..."
+  },
+  {
+    "title": "Yuelu Mountain",
+    "description": "Hiking, lake view, historical culture",
+    "icon_url": "static/icons/mountain.gif",
+    "image_url": "static/images/yuelu_mountain.png",
+    "address": "Yuelu District, Changsha, Hunan",
+    "copyright": "https://ibaotu.com/sucai/..."
+  },
+  {
+    "title": "Orange Isle",
+    "description": "Walking, sightseeing, night fireworks show",
+    "icon_url": "static/icons/island.gif",
+    "image_url": "static/images/juzizhou.png",
+    "address": "Xiangjiang River, Changsha, Hunan",
+    "copyright": "https://haowallpaper.com/..."
+  }
+]
+```
+
+**字段说明**:
+- `title`: 景点名称（英文）
+- `description`: 景点描述（英文）
+- `icon_url`: 景点小图标URL
+- `image_url`: 景点图片URL
+- `address`: 景点地址（英文）
+- `copyright`: 图片版权网址
+
+---
+
+### 数据库表结构
+
+#### 天气表 (city_weather)
+```sql
+CREATE TABLE city_weather (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    month INT NOT NULL,               -- 月份 3,4,5
+    description VARCHAR(255) NOT NULL,-- 英文天气描述
+    icon VARCHAR(100) NOT NULL        -- gif 或 icon 文件名
+);
+```
+
+#### 景点表 (city_sights)
+```sql
+CREATE TABLE city_sights (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(100) NOT NULL,      -- 景点名称英文
+    description VARCHAR(255) NOT NULL,-- 描述英文
+    icon VARCHAR(100),                 -- 小 gif icon 文件
+    image VARCHAR(255),                -- 图片文件路径
+    address VARCHAR(255),              -- 地址英文
+    copyright VARCHAR(255)             -- 图片版权网址
+);
+```
+
+---
+
+### 静态资源准备
+
+需要在 `static/` 目录下准备以下文件：
+
+#### 天气图标 (static/icons/)
+- `rain.gif` - 雨天图标
+- `sunny.gif` - 晴天图标
+
+#### 景点资源
+- `flower.gif` - 植物园图标
+- `static/images/hunan_garden.png` - 湖南省植物园图片
+
+- `mountain.gif` - 山岳图标
+- `static/images/yuelu_mountain.png` - 岳麓山图片
+
+- `island.gif` - 岛屿图标
+- `static/images/juzizhou.png` - 橘子洲图片
+
+---
+
+### 数据库初始化
+
+城市信息模块的数据库会在服务启动时自动初始化。如需手动初始化：
+
+```bash
+python init_city_db.py
+```
+
+---
+
+### 前端集成建议
+
+1. **天气显示**:
+   - 页面加载时调用 `/api/city/weather` 获取当前月份天气
+   - 根据月份调用 `/api/city/weather?month=X` 获取对应月份天气
+   - 使用返回的 `icon_url` 显示天气动画图标
+
+2. **景点展示**:
+   - 调用 `/api/city/sights?limit=3` 获取景点列表
+   - 展示景点图片和描述
+   - 点击景点可查看详细信息
+
+3. **版权信息**:
+   - 使用景点图片时，显示 `copyright` 字段的版权链接
+
+---
+
+### 测试
+
+运行API测试：
+
+```bash
+python test_city_api.py
+```
+
+---
+
+### 扩展说明
+
+城市信息模块位于 `recommendation/` 目录下，后续可扩展：
+- 添加更多月份的天气数据
+- 添加更多景点信息
+- 支持景点分类和筛选
+- 添加景点评分和评论功能
+
+与美食推荐模块 (`restaurant.py`) 同级，统一在 `recommendation` 模块下管理。
