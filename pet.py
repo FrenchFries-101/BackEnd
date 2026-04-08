@@ -27,19 +27,10 @@ from pet_api.services.pet_logic import (
 # ── t_user 积分操作（以 t_user.points 为准） ──
 
 def get_t_user_points(db: Session, user_id: str) -> int:
-    # Debug: 添加调试日志
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    logging.info(f"[DEBUG] get_t_user_points - input user_id={user_id}, type={type(user_id)}")
-    logging.info(f"[DEBUG] query: SELECT points FROM t_user WHERE user_id = {user_id} AND is_delete = 0")
-    
     row = db.execute(
         text("SELECT points FROM t_user WHERE user_id = :uid AND is_delete = 0"),
         {"uid": int(user_id)},
     ).fetchone()
-    
-    logging.info(f"[DEBUG] query result row={row}")
-    
     return int(row[0]) if row else 0
 
 
@@ -221,12 +212,6 @@ def apply_service(payload: schemas.ApplyServiceRequest, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Service not found")
 
     user_points = get_t_user_points(db, payload.user_id)
-
-    # Debug: 添加调试日志
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    logging.info(f"[DEBUG] apply_service - user_id={payload.user_id}, type={type(payload.user_id)}")
-    logging.info(f"[DEBUG] user_points={user_points}, service.points_cost={service.points_cost}")
 
     if user_points < service.points_cost:
         db.add(models.UserServiceRecord(
