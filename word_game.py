@@ -213,17 +213,78 @@ def get_user_latest_match(db: Session, user_id: int):
     ).mappings().first()
 
 
-def get_waiting_match(db: Session):
-    return db.execute(
+def sync_match_player_count(db: Session, match_id: int):
+    row = db.execute(
         text("""
-            SELECT *
+            SELECT COUNT(*) AS cnt
+            FROM t_wordgame_match_player
+            WHERE match_id = :match_id
+              AND status IN ('matching', 'active')
+        """),
+        {"match_id": match_id}
+    ).mappings().first()
+
+    count = row["cnt"] if row else 0
+
+    db.execute(
+        text("""
+            UPDATE t_wordgame_match
+            SET current_players = :count
+            WHERE id = :match_id
+        """),
+        {
+            "count": count,
+            "match_id": match_id
+        }
+    )
+
+    return count
+
+
+def get_waiting_match(db: Session):
+    waiting_matches = db.execute(
+        text("""
+            SELECT id
             FROM t_wordgame_match
             WHERE status = 'waiting'
-              AND current_players < max_players
             ORDER BY created_at ASC
-            LIMIT 1
         """)
-    ).mappings().first()
+    ).mappings().all()
+
+    for row in waiting_matches:
+        match_id = row["id"]
+        count = sync_match_player_count(db, match_id)
+
+        match = db.execute(
+            text("""
+                SELECT *
+                FROM t_wordgame_match
+                WHERE id = :match_id
+                LIMIT 1
+            """),
+            {"match_id": match_id}
+        ).mappings().first()
+
+        if not match:
+            continue
+
+        if count == 0:
+            db.execute(
+                text("""
+                    UPDATE t_wordgame_match
+                    SET status = 'finished',
+                        finished_at = CASE WHEN finished_at IS NULL THEN NOW() ELSE finished_at END
+                    WHERE id = :match_id
+                      AND status = 'waiting'
+                """),
+                {"match_id": match_id}
+            )
+            continue
+
+        if count < match["max_players"]:
+            return match
+
+    return None
 
 
 def create_match(db: Session, user_id: int):
@@ -272,10 +333,13 @@ def assign_teams_and_start_if_full(db: Session, match_id: int):
             SELECT id, user_id, seat_no
             FROM t_wordgame_match_player
             WHERE match_id = :match_id
+              AND status IN ('matching', 'active')
             ORDER BY seat_no ASC
         """),
         {"match_id": match_id}
     ).mappings().all()
+
+    sync_match_player_count(db, match_id)
 
     if len(players) != 4:
         return False
@@ -341,6 +405,7 @@ def get_match_players(db: Session, match_id: int):
                 total_roll_contribute
             FROM t_wordgame_match_player
             WHERE match_id = :match_id
+              AND status IN ('matching', 'active', 'finished')
             ORDER BY seat_no ASC
         """),
         {"match_id": match_id}
@@ -360,6 +425,8 @@ def _get_multi_reward_claim_map(db: Session, match_id: int):
 
 
 def get_match_detail(db: Session, match_id: int):
+    active_count = sync_match_player_count(db, match_id)
+
     match = db.execute(
         text("""
             SELECT *
@@ -388,7 +455,7 @@ def get_match_detail(db: Session, match_id: int):
         "match_code": match["match_code"],
         "status": match["status"],
         "max_players": match["max_players"],
-        "current_players": match["current_players"],
+        "current_players": active_count,
         "total_cells": match["total_cells"],
         "red_position": match["red_position"],
         "blue_position": match["blue_position"],
@@ -752,7 +819,8 @@ def join_game(user_id: int, db: Session = Depends(get_db)):
             "message": "already joined",
             "match_id": existing["match_id"],
             "match_code": existing["match_code"],
-            "status": existing["match_status"]
+            "status": existing["match_status"],
+            "players": existing["current_players"]
         }
 
     match = get_waiting_match(db)
@@ -764,14 +832,18 @@ def join_game(user_id: int, db: Session = Depends(get_db)):
             SELECT seat_no
             FROM t_wordgame_match_player
             WHERE match_id = :match_id
-            AND status IN ('matching', 'active')
+              AND status IN ('matching', 'active')
             ORDER BY seat_no
         """),
         {"match_id": match["id"]}
     ).mappings().all()
 
     used = {row["seat_no"] for row in used_seats}
-    next_seat = next(seat for seat in range(1, 5) if seat not in used)
+    available_seats = [seat for seat in range(1, 5) if seat not in used]
+    if not available_seats:
+        raise HTTPException(status_code=400, detail="waiting match is already full")
+
+    next_seat = available_seats[0]
 
     db.execute(
         text("""
@@ -790,31 +862,14 @@ def join_game(user_id: int, db: Session = Depends(get_db)):
         }
     )
 
-    db.execute(
-        text("""
-            UPDATE t_wordgame_match
-            SET current_players = current_players + 1
-            WHERE id = :match_id
-        """),
-        {"match_id": match["id"]}
-    )
-
     create_event(db, match["id"], "player_joined", user_id, {
         "seat_no": next_seat
     })
 
-    updated_match = db.execute(
-        text("""
-            SELECT *
-            FROM t_wordgame_match
-            WHERE id = :match_id
-            LIMIT 1
-        """),
-        {"match_id": match["id"]}
-    ).mappings().first()
+    active_count = sync_match_player_count(db, match["id"])
 
-    if updated_match["current_players"] == updated_match["max_players"]:
-        assign_teams_and_start_if_full(db, updated_match["id"])
+    if active_count == 4:
+        assign_teams_and_start_if_full(db, match["id"])
 
     db.commit()
 
@@ -832,7 +887,7 @@ def join_game(user_id: int, db: Session = Depends(get_db)):
         "match_id": final_match["id"],
         "match_code": final_match["match_code"],
         "status": final_match["status"],
-        "players": final_match["current_players"]
+        "players": active_count if final_match["status"] == "waiting" else final_match["current_players"]
     }
 
 
@@ -855,31 +910,11 @@ def cancel_match(user_id: int, db: Session = Depends(get_db)):
         {"player_id": existing["player_id"]}
     )
 
-    db.execute(
-        text("""
-            UPDATE t_wordgame_match
-            SET current_players = CASE
-                WHEN current_players > 0 THEN current_players - 1
-                ELSE 0
-            END
-            WHERE id = :match_id
-        """),
-        {"match_id": existing["match_id"]}
-    )
-
     create_event(db, existing["match_id"], "player_cancelled", user_id, None)
 
-    remaining = db.execute(
-        text("""
-            SELECT COUNT(*) AS cnt
-            FROM t_wordgame_match_player
-            WHERE match_id = :match_id
-              AND status IN ('matching', 'active')
-        """),
-        {"match_id": existing["match_id"]}
-    ).mappings().first()
+    remaining_count = sync_match_player_count(db, existing["match_id"])
 
-    if remaining["cnt"] == 0:
+    if remaining_count == 0:
         db.execute(
             text("""
                 UPDATE t_wordgame_match
@@ -892,7 +927,10 @@ def cancel_match(user_id: int, db: Session = Depends(get_db)):
         create_event(db, existing["match_id"], "match_closed_empty", None, None)
 
     db.commit()
-    return {"message": "cancelled"}
+    return {
+        "message": "cancelled",
+        "players": remaining_count
+    }
 
 
 @router.get("/status")
