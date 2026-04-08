@@ -131,3 +131,8 @@ class PetTypeResponse(BaseModel):
 class HealthResponse(BaseModel):
     ok: bool
     database_url: str
+
+
+class PetNameResponse(BaseModel):
+    pet_id: int
+    name: str
