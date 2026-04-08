@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import sys
 
 # 导入各模块的路由
 from listening import router as listening_router
@@ -31,12 +32,14 @@ app = FastAPI(
 # 静态文件挂载
 # --------------------------
 BASE_DIR = Path(__file__).resolve().parent
+RUNTIME_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else BASE_DIR
 STATIC_DIR = BASE_DIR / "static"
-HEAD_DIR = BASE_DIR / "head"
+HEAD_DIR = RUNTIME_DIR / "head"
 HEAD_DIR.mkdir(parents=True, exist_ok=True)
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/head", StaticFiles(directory=HEAD_DIR), name="head")
 
 # --------------------------
 # 注册所有模块的路由
