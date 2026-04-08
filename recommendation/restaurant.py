@@ -22,46 +22,42 @@ def recommend_restaurant(
     spice_level: str = Query(None, description="辣度筛选"),
     db: Session = Depends(get_db)
 ) -> RestaurantResponse:
-    """随机推荐餐馆"""
-    # 构建查询条件
-    conditions = []
-    params = {}
-    
+    """随机推荐餐馆 - 使用ORM确保筛选条件严格生效"""
+
+    from sqlalchemy import func
+
+    query = db.query(Restaurant)
+
     if location:
-        conditions.append("location = :location")
-        params["location"] = location
-    
+        query = query.filter(Restaurant.location == location)
+
     if cuisine:
-        conditions.append("cuisine = :cuisine")
-        params["cuisine"] = cuisine
-    
+        query = query.filter(Restaurant.cuisine == cuisine)
+
     if spice_level:
-        conditions.append("spice_level = :spice_level")
-        params["spice_level"] = spice_level
-    
-    # 构建 WHERE 子句
-    where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-    
-    # 执行随机查询
-    query = f"SELECT id, name, location, cuisine, spice_level FROM restaurant{where_clause} ORDER BY RAND() LIMIT 1"
-    
-    result = db.execute(text(query), params).fetchone()
-    
+        query = query.filter(Restaurant.spice_level == spice_level)
+
+    result = query.order_by(func.rand()).first()
+
     if result is None:
-        # 如果筛选结果为空，返回数据库中的任意一条
-        result = db.execute(
-            text("SELECT id, name, location, cuisine, spice_level FROM restaurant ORDER BY RAND() LIMIT 1")
-        ).fetchone()
-        
-        if result is None:
-            raise HTTPException(status_code=404, detail="No restaurants found in database")
-    
+        error_msg = "No restaurants found"
+        filters = []
+        if location:
+            filters.append(f"location={location}")
+        if cuisine:
+            filters.append(f"cuisine={cuisine}")
+        if spice_level:
+            filters.append(f"spice_level={spice_level}")
+        if filters:
+            error_msg = f"No restaurants found with filters: {', '.join(filters)}"
+        raise HTTPException(status_code=404, detail=error_msg)
+
     return RestaurantResponse(
-        id=result[0],
-        name=result[1],
-        location=result[2],
-        cuisine=result[3],
-        spice_level=result[4]
+        id=result.id,
+        name=result.name,
+        location=result.location,
+        cuisine=result.cuisine,
+        spice_level=result.spice_level
     )
 
 
@@ -73,7 +69,12 @@ def refresh_recommendation(
     db: Session = Depends(get_db)
 ) -> RestaurantResponse:
     """刷新推荐（与 recommend 相同）"""
-    return recommend_restaurant(location, cuisine, spice_level, db)
+    return recommend_restaurant(
+        location=location,
+        cuisine=cuisine,
+        spice_level=spice_level,
+        db=db
+    )
 
 
 def init_restaurant_db():
